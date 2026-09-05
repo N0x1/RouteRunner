@@ -1,0 +1,13 @@
+reference/
+tools/
+dist/
+**/bin/
+**/obj/
+.vs/
+*.user
+*.suo
+*.sroute
+*.cfg
+*.log
+.env
+.env.*
