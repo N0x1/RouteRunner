@@ -106,10 +106,22 @@ namespace RouteRunner.Core
 
         void CheckNoLinks(string path)
         {
-            // Check ancestors as well: a junction must not redirect editing/deletion outside the library.
-            for (string current = Path.GetFullPath(path); current != null; current = Path.GetDirectoryName(current))
-                if ((File.Exists(current) || Directory.Exists(current)) && (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
-                    throw new IOException("Route editing through linked folders or files is not supported.");
+            string fullPath = Path.GetFullPath(path);
+            string prefix = Root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (!string.Equals(fullPath, Root, StringComparison.OrdinalIgnoreCase) &&
+                !fullPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                throw new IOException("The path is outside this route library.");
+            // The configured root may sit on a linked Steam library or Wine drive. Only links
+            // beneath it can redirect individual route operations outside that chosen storage.
+            for (string current = fullPath; !string.Equals(current, Root, StringComparison.OrdinalIgnoreCase); current = Path.GetDirectoryName(current))
+            {
+                FileAttributes attributes;
+                try { attributes = File.GetAttributes(current); }
+                catch (FileNotFoundException) { continue; }
+                catch (DirectoryNotFoundException) { continue; }
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                    throw new IOException("Linked folders or files inside the route library are not supported: " + current);
+            }
         }
     }
 }

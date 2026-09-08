@@ -357,6 +357,91 @@ class Program
             File.WriteAllText(config, "updated setting");
             Assert(!LegacyMigration.CopyConfig(legacyConfig, config) && File.ReadAllText(config) == "updated setting");
         }));
+        Test("Linked installation supports fresh library, migration, recording, sharing, trim and recovery", () => WithLibrary(storage =>
+        {
+            string target = Path.Combine(storage.Root, "installation");
+            WithDirectoryLink(Path.Combine(storage.Root, "steam-link"), target, link =>
+            {
+                var library = new RouteLibrary(Path.Combine(link, "BepInEx", "RouteRunner") + Path.DirectorySeparatorChar);
+                Assert(Directory.Exists(library.Imports) && Directory.Exists(library.Exports));
+                var old = new RouteLibrary(Path.Combine(link, "BepInEx", "RouteGhost"));
+                var route = Example(); old.Save(route);
+                Assert(LegacyMigration.CopyRoutes(old.Root, library, _ => { }) == 1);
+                string file = library.RouteFiles().Single();
+                Assert(library.Load(file).Id == route.Id);
+                Assert(library.Load(library.Export(route)).Id == route.Id);
+                var trimmed = RouteEditor.Trim(route, 1, 2);
+                library.Replace(trimmed, file, route);
+                Assert(library.Load(file).Duration == 1);
+                var deleted = library.Delete(new[] { file });
+                Assert(deleted.Errors.Count == 0 && library.RouteFiles().Length == 0);
+                Assert(library.Restore(deleted) == 1 && library.List(_ => { }).Count == 1);
+            });
+        }));
+        Test("Chosen library root can itself be linked", () => WithLibrary(storage =>
+        {
+            WithDirectoryLink(Path.Combine(storage.Root, "root-link"), Path.Combine(storage.Root, "route-storage"), link =>
+            {
+                var library = new RouteLibrary(link);
+                var route = Example(); string file = library.Save(route);
+                Assert(library.Load(file).Id == route.Id && library.List(_ => { }).Count == 1);
+                Assert(File.Exists(library.Export(route)));
+            });
+        }));
+        Test("Linked import and export folders are rejected before library startup", () => WithLibrary(storage =>
+        {
+            foreach (string name in new[] { "Imports", "Exports" })
+            {
+                string root = Path.Combine(storage.Root, "new-" + name);
+                Directory.CreateDirectory(root);
+                WithDirectoryLink(Path.Combine(root, name), Path.Combine(storage.Root, "outside-" + name), link =>
+                    RejectIO(() => new RouteLibrary(root)));
+            }
+        }));
+        Test("Links inside the library cannot redirect saves, exports, edits or recovery", () => WithLibrary(storage =>
+        {
+            foreach (string name in new[] { "Maps", "Exports", "Deleted", "Backups" })
+            {
+                var library = new RouteLibrary(Path.Combine(storage.Root, "library-" + name));
+                var route = Example();
+                string file = name == "Maps" ? null : library.Save(route);
+                var deleted = name == "Deleted" ? library.Delete(new[] { file }) : null;
+                string folder = Path.Combine(library.Root, name);
+                // Move any existing folder aside so the test can insert a junction without deleting its data.
+                if (Directory.Exists(folder)) Directory.Move(folder, folder + "-original");
+                string outside = Path.Combine(storage.Root, "outside-" + name);
+                WithDirectoryLink(folder, outside, link =>
+                {
+                    string sentinel = Path.Combine(outside, "keep.txt"); File.WriteAllText(sentinel, "keep");
+                    switch (name)
+                    {
+                        case "Maps": RejectIO(() => library.Save(route)); RejectIO(() => library.RouteFiles()); break;
+                        case "Exports": RejectIO(() => library.Export(route)); break;
+                        case "Deleted":
+                            Assert(library.Restore(deleted) == 0 && deleted.Errors.Count == 1);
+                            RejectIO(() => library.Delete(Array.Empty<string>())); break;
+                        case "Backups": RejectIO(() => library.Replace(RouteEditor.Trim(route, 1, 2), file, route)); break;
+                    }
+                    Assert(File.ReadAllText(sentinel) == "keep" && Directory.GetFileSystemEntries(outside).Length == 1);
+                    if (file != null && name != "Deleted") Assert(library.Load(file).Duration == route.Duration);
+                });
+            }
+        }));
+        Test("Linked map folders are excluded and cannot be edited or deleted", () => WithLibrary(storage =>
+        {
+            var library = new RouteLibrary(Path.Combine(storage.Root, "library"));
+            var route = Example(); string file = library.Save(route);
+            string mapFolder = Path.GetDirectoryName(file), target = Path.Combine(storage.Root, "outside-map");
+            Directory.Move(mapFolder, target);
+            WithDirectoryLink(mapFolder, target, link =>
+            {
+                Assert(library.RouteFiles().Length == 0);
+                RejectIO(() => library.Save(route));
+                RejectIO(() => library.Delete(new[] { file }));
+                RejectIO(() => library.Replace(RouteEditor.Trim(route, 1, 2), file, route));
+                Assert(library.Load(Path.Combine(target, Path.GetFileName(file))).Duration == route.Duration);
+            });
+        }));
         Console.WriteLine($"PASS: {passed} tests.");
     }
     static Route Example()
@@ -422,6 +507,26 @@ class Program
         string root = Path.Combine(Path.GetTempPath(), "RouteRunnerTests-" + Guid.NewGuid().ToString("N"));
         try { test(new RouteLibrary(root)); }
         finally { Directory.Delete(root, true); }
+    }
+    static void WithDirectoryLink(string link, string target, Action<string> test)
+    {
+        Directory.CreateDirectory(target);
+        if (OperatingSystem.IsWindows())
+        {
+            var start = new System.Diagnostics.ProcessStartInfo("cmd.exe", "/d /c mklink /J \"" + link + "\" \"" + target + "\"")
+            { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+            using var process = System.Diagnostics.Process.Start(start);
+            string output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+            process.WaitForExit();
+            if (process.ExitCode != 0) throw new Exception("Could not create test junction: " + output);
+        }
+        else Directory.CreateSymbolicLink(link, target);
+        try
+        {
+            Assert((File.GetAttributes(link) & FileAttributes.ReparsePoint) != 0);
+            test(link);
+        }
+        finally { Directory.Delete(link); } // Remove only the link; the fixture owns its target separately.
     }
     static void RejectIO(Action action)
     {

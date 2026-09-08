@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.6
+
+- Fix startup failing when the route library sits under a linked installation folder, including Steam paths used through Proton/Wine.
+- Keep checks against linked folders and files inside the route library.
+- Report the storage path on startup failure and stop printing a misleading success message.
+
 ## 1.3.5
 
 First public release of Route Runner.

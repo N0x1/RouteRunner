@@ -1,6 +1,6 @@
 {
   "name": "Route_Runner",
-  "version_number": "1.3.5",
+  "version_number": "1.3.6",
   "website_url": "https://github.com/N0x1/RouteRunner",
   "description": "Record, replay, trim and share movement ghosts in STRAFTAT exploration. Practise routes with custom colours, playback controls and in-game settings.",
   "dependencies": [

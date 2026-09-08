@@ -15,7 +15,9 @@ namespace RouteRunner.Core
         public RouteLibrary(string root)
         {
             Root = Path.GetFullPath(root);
-            CheckNoLinks(Root);
+            if (Root.Length > Path.GetPathRoot(Root).Length)
+                Root = Root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            CheckNoLinks(Imports); CheckNoLinks(Exports);
             Directory.CreateDirectory(Root); Directory.CreateDirectory(Imports); Directory.CreateDirectory(Exports);
         }
         public string Save(Route route)

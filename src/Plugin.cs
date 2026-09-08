@@ -15,7 +15,7 @@ using UnityEngine.SceneManagement;
 
 namespace RouteRunner
 {
-    [BepInPlugin("practice.straftat.routerunner", "Route Runner", "1.3.5")]
+    [BepInPlugin("practice.straftat.routerunner", "Route Runner", "1.3.6")]
     [BepInDependency("kestrel.straftat.modmenu", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInIncompatibility("practice.straftat.routeghost")]
     [DefaultExecutionOrder(10000)]
@@ -106,9 +106,14 @@ namespace RouteRunner
                     return () => { entries = list; Notify(migrated > 0 ? "Copied " + migrated + " existing routes to Route Runner." : "Library ready: " + list.Count + " routes."); };
                 });
             }
-            catch (Exception e) { Report(e); enabled = false; }
+            catch (Exception e)
+            {
+                Logger.LogError("Route Runner could not open its route library at " + Path.Combine(Paths.BepInExRootPath, "RouteRunner") + ". Hotkeys and HUD are disabled. " + e);
+                enabled = false;
+                return;
+            }
             activeMap = GameBridge.Map; sceneHandle = SceneManager.GetActiveScene().handle;
-            Logger.LogInfo("Route Runner 1.3.5 loaded. Open " + menuKey.Value + " for routes. " + (modMenuReady ? "Settings are in Settings > Mods > Route Runner." : "Settings are in the panel.") + " Exploration only.");
+            Logger.LogInfo("Route Runner 1.3.6 loaded. Open " + menuKey.Value + " for routes. " + (modMenuReady ? "Settings are in Settings > Mods > Route Runner." : "Settings are in the panel.") + " Exploration only.");
         }
 
         void Start() { Logger.LogInfo("Route Runner frame loop started."); }
